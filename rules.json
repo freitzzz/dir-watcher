@@ -1,0 +1,97 @@
+{
+    "watch": [
+        "~/Downloads"
+    ],
+    "move": [
+        {
+            "path": "~/Pictures",
+            "ext": [
+                "png",
+                "webp",
+                "svg",
+                "jpeg",
+                "jpg",
+                "tff"
+            ]
+        },
+        {
+            "path": "~/Videos",
+            "ext": [
+                "mp4",
+                "mov",
+                "webm"
+            ]
+        },
+        {
+            "path": "~/Music",
+            "ext": [
+                "wav",
+                "3gp",
+                "aa",
+                "aac",
+                "aax",
+                "act",
+                "ogg"
+            ]
+        },
+        {
+            "path": "~/Music/MP3",
+            "ext": [
+                "mp3"
+            ]
+        },
+        {
+            "path": "~/Documents/Text",
+            "ext": [
+                "txt",
+                "rtf",
+                "docx",
+                "doc",
+                "odt",
+                "ods"
+            ]
+        },
+        {
+            "path": "~/Documents/PDF",
+            "ext": [
+                "pdf"
+            ]
+        },
+        {
+            "path": "~/Documents/Presentations",
+            "ext": [
+                "ppt",
+                "pptx"
+            ]
+        },
+        {
+            "path": "~/Documents/Spreadsheets",
+            "ext": [
+                "csv",
+                "tsv",
+                "xls",
+                "xlsx"
+            ]
+        },
+        {
+            "path": "~/Documents/Sites",
+            "ext": [
+                "html",
+                "htm",
+                "css",
+                "js"
+            ]
+        },
+        {
+            "path": "~/Documents/Compressed",
+            "ext": [
+                "zip",
+                "7z",
+                "rar",
+                "tar",
+                "xz"
+            ]
+        }
+    ],
+    "unknown": "~/Misc"
+}
