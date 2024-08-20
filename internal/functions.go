@@ -45,9 +45,6 @@ func Move(src string, dest string) error {
 			dp = FindNextAvailableFilepath(dp)
 		}
 
-		println(src)
-		println(dp)
-
 		err = os.Rename(src, dp)
 	}
 
@@ -68,6 +65,8 @@ func FindNextAvailableFilepath(path string) string {
 		if !Exists(npath) {
 			break
 		}
+
+		ctr += 1
 	}
 
 	return npath

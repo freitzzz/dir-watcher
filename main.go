@@ -26,7 +26,6 @@ func main() {
 
 	// Start listening for events.
 	go func() {
-		events := make(map[string][]fsnotify.Event)
 
 		for {
 			select {
@@ -37,14 +36,7 @@ func main() {
 
 				filePath := event.Name
 
-				if _, ok := events[filePath]; !ok {
-					events[filePath] = make([]fsnotify.Event, 0)
-				}
-
-				events[filePath] = append(events[filePath], event)
-
 				if event.Has(fsnotify.Chmod) && !internal.ShouldIgnoreFile(filePath) {
-					log.Println(filePath)
 					mp := c[internal.Ext(filePath)]
 
 					if len(mp) == 0 {
@@ -79,8 +71,6 @@ func main() {
 		log.Printf("Watching %s directory\n", ewp)
 
 		err = internal.CleanDir(ewp, c, internal.Expand(rules.Unknown))
-
-		log.Println(err)
 	}
 
 	<-make(chan struct{})
