@@ -3,11 +3,15 @@ package internal
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/fsnotify/fsnotify"
 )
 
+// Parses a rules.json file.
 func Parse(path string) (Rules, error) {
 	var rules Rules
 	bytes, err := os.ReadFile(path)
@@ -19,74 +23,153 @@ func Parse(path string) (Rules, error) {
 	return rules, err
 }
 
-func Cache(move []MoveDir) map[string]string {
-	cache := make(map[string]string)
+// Maps the move input from Rules struct to FileExtToDirMap.
+func CacheMoveDirectories(move []MoveDir) FileExtToDirMap {
+	cache := make(FileExtToDirMap)
 
-	for _, m := range move {
-		for _, ext := range m.Ext {
-			cache[ext] = Expand(m.Path)
+	for _, dir := range move {
+		for _, mappedExt := range dir.Ext {
+			cache[mappedExt] = expand(dir.Path)
 		}
 	}
 
 	return cache
 }
 
-func Move(src string, dest string) error {
+func Watch(rules Rules, cache FileExtToDirMap, watcher *fsnotify.Watcher) error {
 	var err error
 
-	if !Exists(dest) {
-		err = os.MkdirAll(dest, os.ModePerm)
+	for _, dir := range rules.Watch {
+		dirPath := expand(Path(dir))
+		err = watcher.Add(dirPath)
+
+		if err != nil {
+			break
+		}
+
+		log.Printf("Watching %s directory\n", dirPath)
 	}
 
 	if err == nil {
-		dp := filepath.Join(dest, filepath.Base(src))
-
-		if Exists(dp) {
-			dp = FindNextAvailableFilepath(dp)
-		}
-
-		err = os.Rename(src, dp)
+		go onDirectoryChanged(rules, cache, watcher)
 	}
 
 	return err
 }
 
-func FindNextAvailableFilepath(path string) string {
+func AutoCleanDir(rules Rules, cache FileExtToDirMap) error {
+	var err error
+
+	for _, dir := range rules.Watch {
+		dirPath := expand(Path(dir))
+		err = cleanDir(dirPath, cache, expand(rules.Unknown))
+
+		if err != nil {
+			break
+		}
+
+		log.Printf("Cleaned %s directory.\n", dirPath)
+	}
+
+	return err
+}
+
+func onDirectoryChanged(rules Rules, cache FileExtToDirMap, watcher *fsnotify.Watcher) {
+	for {
+		select {
+		case event, ok := <-watcher.Events:
+			if !ok {
+				return
+			}
+
+			filePath := event.Name
+
+			if event.Has(fsnotify.Chmod) && !shouldIgnoreFile(filePath) {
+				moveDirPath := cache[ext(filePath)]
+
+				if len(moveDirPath) == 0 {
+					moveDirPath = expand(rules.Unknown)
+				}
+
+				err := move(filePath, moveDirPath)
+
+				if err != nil {
+					log.Printf("Failed to move file %s\n %v", filePath, err)
+				}
+			}
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				return
+			}
+			log.Println("error:", err)
+		}
+	}
+}
+
+func move(srcPath string, destPath string) error {
+	var err error
+
+	if !exists(destPath) {
+		err = os.MkdirAll(destPath, os.ModePerm)
+	}
+
+	if err == nil {
+		moveDestPath := filepath.Join(destPath, filepath.Base(srcPath))
+
+		if exists(moveDestPath) {
+			moveDestPath = uniqueFilePath(moveDestPath)
+		}
+
+		err = os.Rename(srcPath, moveDestPath)
+
+		if err == nil {
+			log.Printf("Moved file from %s to %s\n", srcPath, moveDestPath)
+		}
+	}
+
+	return err
+}
+
+// Gets the next available file path for a file that already exists on the file system.
+func uniqueFilePath(path string) string {
 	ctr := 1
 
-	npath := path
+	uniqueFilePath := path
 
 	for {
 		filePath := filepath.Base(path)
 		fileExt := filepath.Ext(filePath)
 		dirName := strings.TrimSuffix(path, filePath)
-		npath = filepath.Join(dirName, fmt.Sprintf("%s-%d%s", strings.TrimSuffix(filePath, fileExt), ctr, fileExt))
+		uniqueFilePath = filepath.Join(dirName, fmt.Sprintf("%s-%d%s", strings.TrimSuffix(filePath, fileExt), ctr, fileExt))
 
-		if !Exists(npath) {
+		if !exists(uniqueFilePath) {
 			break
 		}
 
 		ctr += 1
 	}
 
-	return npath
+	return uniqueFilePath
 }
 
-func Exists(path string) bool {
+// Checks if a file path exists on the filesystem.
+func exists(path string) bool {
 	_, err := os.Stat(path)
 
 	return err == nil || !os.IsNotExist(err)
 }
 
-func Expand(gp GlobPath) string {
-	if gp[0] != '~' {
-		return string(gp)
+// Expands a path if it contains short links like the ~ for home directory.
+func expand(path Path) string {
+	if path[0] != '~' {
+		return string(path)
 	}
 
-	return os.ExpandEnv(fmt.Sprintf("%s%s", "$HOME", gp[1:]))
+	return os.ExpandEnv(fmt.Sprintf("%s%s", "$HOME", path[1:]))
 }
 
-func Ext(path string) string {
+// Extracts the file extension from a file path. The returning value does not include the dot (.).
+func ext(path string) string {
 	ext := filepath.Ext(path)
 
 	if len(ext) > 1 {
@@ -96,25 +179,26 @@ func Ext(path string) string {
 	return strings.ToLower(ext)
 }
 
-func ShouldIgnoreFile(path string) bool {
+func shouldIgnoreFile(path string) bool {
 	fileName := filepath.Base(path)
 
 	return strings.HasPrefix(fileName, ".com.google.Chrome") || strings.HasSuffix(fileName, ".crdownload")
 }
 
-func CleanDir(dirPath string, cache map[string]string, unknown string) error {
+// Cleans a directory by moving containing files to directories recognized by the files extension.
+func cleanDir(dirPath string, cache FileExtToDirMap, fallbackDirPath string) error {
 	entries, err := os.ReadDir(dirPath)
 
 	if err == nil {
-		for _, f := range entries {
-			if !f.IsDir() || ShouldIgnoreFile(f.Name()) {
-				mp := cache[Ext(f.Name())]
+		for _, file := range entries {
+			if !file.IsDir() || shouldIgnoreFile(file.Name()) {
+				movingDirPath := cache[ext(file.Name())]
 
-				if len(mp) == 0 {
-					mp = unknown
+				if len(movingDirPath) == 0 {
+					movingDirPath = fallbackDirPath
 				}
 
-				err = Move(filepath.Join(dirPath, f.Name()), mp)
+				err = move(filepath.Join(dirPath, file.Name()), movingDirPath)
 
 				if err != nil {
 					break

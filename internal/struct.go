@@ -3,14 +3,17 @@ package internal
 type Rules struct {
 	Watch   []WatchDir `json:"watch"`
 	Move    []MoveDir  `json:"move"`
-	Unknown GlobPath   `json:"unknown"`
+	Unknown Path       `json:"unknown"`
 }
 
-type GlobPath string
+type Path string
 
-type WatchDir GlobPath
+type WatchDir Path
 
 type MoveDir struct {
-	Path GlobPath `json:"path"`
+	Path Path     `json:"path"`
 	Ext  []string `json:"ext"`
 }
+
+// Example: "png" -> "/home/user/Pictures"
+type FileExtToDirMap map[string]string
